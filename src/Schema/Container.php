@@ -1,16 +1,19 @@
 <?php namespace CloudCreativity\LaravelJsonApi\Schema;
 
+use App;
+use Config;
 use InvalidArgumentException;
+use ReflectionClass;
+use Illuminate\Support\Str;
 use Neomerx\JsonApi\I18n\Translator as T;
 use Neomerx\JsonApi\Schema\Container as BaseContainer;
-use ReflectionClass;
 
 /**
  * @package CloudCreativity\LaravelJsonApi
  */
 class Container extends BaseContainer
 {
-    const JSON_API_SCHEMAS = "JSON_API_SCHEMAS";
+    const NAMESPACES = "NAMESPACES";
 
     protected $namespace;
 
@@ -25,16 +28,27 @@ class Container extends BaseContainer
             return $this->getCreatedProvider($type);
         }
 
-        // If it does not exist try register using reflection
+        // If it does not exist try register using reflection searching schema in default location
         if ($this->hasProviderMapping($type) === false)
         {
-            $schemas = (new ReflectionClass($type))->getConstant(static::JSON_API_SCHEMAS);
-            if (! $schemas || ! isset($schemas[$this->namespace]))
+            if (Config::get('json-api.generator.namespace'))
             {
-                throw new InvalidArgumentException(T::t('Schema is not registered for type \'%s\'.', [$type]));
-            }
+                $schema = 'App\\'.Config::get('json-api.generator.namespace').
+                    '\\'.Str::studly(App::make($type)->getTable()).'\\Schema';
+                
+                if (! class_exists($schema))
+                {
+                    throw new InvalidArgumentException(T::t('Schema is not registered for type \'%s\'.', [$type]));
+                }
 
-            $this->setProviderMapping($type, $schemas[$this->namespace]);
+                $namespaces = (new ReflectionClass($schema))->getConstant(static::NAMESPACES);
+                if (! $namespaces || (! in_array($this->namespace, $namespaces) && ! in_array('defaults', $namespaces)))
+                {
+                    throw new InvalidArgumentException(T::t('Schema is not registered for type \'%s\'.', [$type]));
+                }
+
+                $this->setProviderMapping($type, $schema);
+            }
         }
 
         $classNameOrClosure = $this->getProviderMapping($type);
